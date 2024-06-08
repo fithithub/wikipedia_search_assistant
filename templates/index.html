@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Audio recorder</title>
+    <style>
+        /* Adding background image */
+        body {
+            /* background-image: url('static/bckgrnd.png'); */
+            background-image: url('static/bckg.png');
+            background-size: cover;
+            /* background-attachment: cover; */
+            background-repeat: no-repeat;
+            background-position: fixed;
+            text-align: center;
+        }
+
+        h1 {
+            margin: 0;
+            padding: 20px 0;
+        }
+
+        #recordButton {
+            border: none;
+            background: none;
+            padding: 0;
+            display: inline-block;
+        }
+
+        #recordButton img {
+            width: 50px;
+            height: 50px;
+        }
+
+        #responseImage, #responseAudio {
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        } 
+        #loadingOverlay {
+            display: none;
+             position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 2;
+            color: white; 
+            font-size: 20px; 
+            justify-content: center;
+            align-items: center;
+        } 
+        
+        .loader {
+            border: 16px solid #f3f3f3;
+            border-top: 16px solid #3498db; 
+            border-radius: 50%;
+            width: 120px;
+            height: 120px;
+            animation: spin 2s linear infinite;
+        }
+        #loadingMessage {
+            text-align: center; 
+            margin-top: 20px; 
+        }
+
+        /* @keyframes fadeInOut {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+
+        #loadingOverlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 2;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        #loadingMessage {
+            color: white;
+            font-size: 20px;
+            animation: fadeInOut 2s linear infinite;
+        } */
+
+        
+    </style>
+</head>
+<link rel="icon" type="image/png" href="static/ear_dalle.webp">
+<body>
+    <div id="loadingOverlay">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+            <div class="loader"></div>
+            <p id="loadingMessage">Estimated waiting time < 1 minute</p>
+        </div>
+    </div>
+
+    <h1>AI + Wikipedia</h1>
+    <button id="recordButton"><img src="static/record_icon.png" alt="Record" /></button>
+    <p id="serverResponse" style="display:none"></p>
+    <br>
+    <img id="responseImage" src="" alt="Response image" style="display: none;">
+    <br>
+    <audio id="responseAudio" controls style="display: none;"></audio>
+
+    <div id="loadingOverlay">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+            <div class="loader"></div>
+        </div>
+    </div>
+
+    <script>
+        let recordButton = document.getElementById("recordButton");
+        let mediaRecorder;
+        let audioChunks = [];
+
+        recordButton.addEventListener("click", () => {
+            if (mediaRecorder && mediaRecorder.state === "recording") {
+                mediaRecorder.stop();
+                recordButton.querySelector('img').src = "static/record_icon.png";
+                recordButton.querySelector('img').alt = "Record";
+            } else {
+                navigator.mediaDevices.getUserMedia({ audio: true })
+                    .then(stream => {
+                        mediaRecorder = new MediaRecorder(stream);
+                        mediaRecorder.ondataavailable = event => {
+                            audioChunks.push(event.data);
+                        };
+                        mediaRecorder.onstop = () => {
+                            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                            const formData = new FormData();
+                            formData.append("audio_data", audioBlob);
+
+                            document.getElementById('loadingOverlay').style.display = 'block';
+
+                            fetch("/upload", { method: "POST", body: formData })
+                                .then(response => {
+                                    if (response.ok) {
+                                        return fetch("/process_audio", { method: "POST", body: formData });
+                                    } else {
+                                        throw new Error('Upload failed');
+                                    }
+                                })
+                                .then(response => response.json())
+                                .then(data => {
+                                    document.getElementById('loadingOverlay').style.display = 'none';
+                                    document.getElementById('serverResponse').textContent = data.message;
+                                    document.getElementById('serverResponse').style.display = 'block';
+
+                                    if (data.image) {
+                                        document.getElementById('responseImage').src = data.image;
+                                        document.getElementById('responseImage').style.display = 'block';
+                                    }
+
+                                    if (data.audio) {
+                                        let audioElement = document.getElementById('responseAudio');
+                                        audioElement.src = data.audio;
+                                        audioElement.play();
+                                        audioElement.style.display = 'block';
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('Error:', error);
+                                    document.getElementById('loadingOverlay').style.display = 'none';
+                                });
+                            audioChunks = [];
+                        };
+                        mediaRecorder.start();
+                        recordButton.querySelector('img').src = "static/recording_icon.png";
+                        recordButton.querySelector('img').alt = "Stop Recording";
+                    });
+            }
+        });
+    </script>
+</body>
+</html>

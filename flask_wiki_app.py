@@ -1,17 +1,34 @@
 from flask import Flask, request, render_template
 import os
 from PIL import Image
-import base64
 from io import BytesIO
 from datetime import datetime
+from pathlib import Path
+import time
+from bs4 import BeautifulSoup
+import requests
+import base64
+import matplotlib.image as mpimg
 
+from dotenv import load_dotenv, find_dotenv
+_ = load_dotenv(find_dotenv())
+from openai import OpenAI
+
+client = OpenAI(
+    api_key=os.environ.get("OPENAI_API_KEY")
+)
+
+##############################################################
+
+# create the app
 app = Flask(__name__)
 
+# load the html
 @app.route('/')
 def index():
     return render_template('index.html')
 
-
+# store the users's audio/query when pressing the red button in the UI
 @app.route('/upload', methods=['POST'])
 def upload():
     if request.method == 'POST':
@@ -23,18 +40,9 @@ def upload():
             return 'File uploaded successfully'
     return 'Failed to upload'
 
-###############################################################
-# process audio file:
+#### FUNCTIONS FOR MANAGING THE FLOW OF THE DATA
 
-import os
-from dotenv import load_dotenv, find_dotenv
-_ = load_dotenv(find_dotenv())
-from openai import OpenAI
-
-client = OpenAI(
-    api_key=os.environ.get("OPENAI_API_KEY")
-)
-
+# transcribe audio file:
 def transcribe_audio(audio_file_path):
     with open(audio_file_path, 'rb') as audio_file:
         transcription = client.audio.transcriptions.create(model = "whisper-1",
@@ -42,6 +50,7 @@ def transcribe_audio(audio_file_path):
                                                            file = audio_file)
     return transcription.text
 
+# auxiliary function to find the latest/newest audio file
 def find_latest_modified_element(folder_path):
     # List all the entries in the given folder
     entries = os.listdir(folder_path)
@@ -59,6 +68,7 @@ def find_latest_modified_element(folder_path):
             latest_file = entry
     return latest_file
 
+# gpt completion
 def get_completion(prompt, model="gpt-3.5-turbo", tmptr = 0):
     messages = [{"role": "user", "content": prompt}]
 
@@ -69,8 +79,7 @@ def get_completion(prompt, model="gpt-3.5-turbo", tmptr = 0):
     )
     return response.choices[0].message.content
 
-import requests
-
+# obtain wikipedia's url given the entity
 def get_wikipedia_url(search_term):
     endpoint = "https://en.wikipedia.org/w/api.php"
     
@@ -101,9 +110,7 @@ def get_wikipedia_url(search_term):
         return None # "Error in API request."
 
 
-import requests
-from pathlib import Path
-import time
+# download wiki img
 def download_image(image_url, output_dir):
     image_name = image_url.split('/')[-1].split('?')[0]  
     image_name = image_name.split('*')[-1]
@@ -118,9 +125,7 @@ def download_image(image_url, output_dir):
             file.write(chunk)
     return output_path
 
-import requests
-from bs4 import BeautifulSoup
- 
+# obtain wiki text
 def obtain_text_from_url(url,chars=4000):
     try:
         headers = {
@@ -138,6 +143,7 @@ def obtain_text_from_url(url,chars=4000):
     except Exception as e:
         return f"Error: {e}"
     
+# query the llm given the wiki text
 def q_url(question, url):
     text_page = obtain_text_from_url(url,10000)
     prompt= f"""
@@ -151,18 +157,13 @@ def q_url(question, url):
         """
     answer = get_completion(prompt, "gpt-4-turbo-preview", 0.1)
     return answer 
-
-import os
-import requests
-import base64
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
  
- # Function to encode the image
+# Function to encode the image into base64
 def encode_image(image_path):
   with open(image_path, "rb") as image_file:
     return base64.b64encode(image_file.read()).decode('utf-8')
 
+# ask the llm (gpt) about the image
 def get_response_v(PROMPT, IMAGE_PATH):
     encoded_image = encode_image(IMAGE_PATH)
     headers = {
@@ -203,6 +204,8 @@ def get_response_v(PROMPT, IMAGE_PATH):
  
     return response.json()['choices'][0]['message']['content']
 
+##### MAIN FUNCTION
+
 # uses all previous functions to get the audio file, the image, the text from the wikipedia page
 # and finally the description of the image and the text from the wikipedia page
 # and also transcribes the result
@@ -228,8 +231,6 @@ def main(recording_path = "recordings"):
         return None, None, None
     else:
         # get the main image from the wikipedia page
-        import requests
-        from bs4 import BeautifulSoup
         headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
@@ -248,7 +249,6 @@ def main(recording_path = "recordings"):
         if image_url[:2] == "//":
             image_url = "https:" + image_url.strip()
 
-        from pathlib import Path
         # dir for saving imgs
         output_dir = Path('data_imgs')
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -296,10 +296,6 @@ def main(recording_path = "recordings"):
         imagen = mpimg.imread(image_path)
         response_wiki_img = get_response_v(task_wiki_img, image_path)
 
-        # from pathlib import Path
-        from openai import OpenAI
-        client = OpenAI()
-
         # input_tts = "With respect to the text in Wikipedia: " + description_wikipedia + "\nWith respect to the main image: " + response_wiki_img
         input_tts =  description_wikipedia + "\n" + response_wiki_img
         
@@ -315,6 +311,8 @@ def main(recording_path = "recordings"):
 
         return speech_file_path, image_path, input_tts
 
+# Final function, conecting the main and the UI
+# upload text, img and audio to html
 @app.route('/process_audio', methods=['POST'])
 def handle_audio():
     
@@ -342,9 +340,6 @@ def handle_audio():
             'image': 'data:image/jpeg;base64,' + img_base64,
             'audio': 'data:audio/webm;base64,' + audio_base64}
 
-
+# run app
 if __name__ == '__main__':
     app.run(debug=True)
-
-# to run the app from the terminal:
-# $ python flask_wiki_app.py

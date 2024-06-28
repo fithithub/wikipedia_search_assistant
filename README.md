@@ -12,13 +12,15 @@ The flow of the app is the following:
 - An audio is recorded with the red button.
 - When the audio recording is stopped, Whisper converts the audio to text.
 - The audio is stored, in the folder *recordings*. A timestamp differentiates the audios.
-- The LLM (GPT in this case) uses its NER (Named Entity Recognition) ability to identify the topic of the audio (person, place, building, company...).
+- The LLM (GPT in this case) uses its Named Entity Recognition (NER) ability to identify the main topic of the audio (person, place, building, company...).
 - The entity is sought in Wikipedia.
-- The first page found has its text and main image extracted for further processing.
+- The first result in Wikipedia has its text and main image extracted for further processing.
 - The image is downloaded in the folder *data_imgs*. Images are not overwritten.
 - If there is a question, the LLM tries to answer it using both the text and the image, independently. Else it summarizes the text and describes the picture.
 - The answer is converted to audio through OpenAI's TTS service and it is saved in the folder *tts_audios*. A timestamp differentiates the audios.
 - The answer as both text and audio as well as the Wikipedia's image are returned to the app for the user to access all three of them.
+
+![flow of the app](static/app_flow.png)
 
 ### **Structure**:
 
